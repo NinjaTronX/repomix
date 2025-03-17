@@ -1,0 +1,683 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+
+================================================================
+File Summary
+================================================================
+
+Purpose:
+--------
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+
+File Format:
+------------
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Multiple file entries, each consisting of:
+  a. A separator line (================)
+  b. The file path (File: path/to/file)
+  c. Another separator line
+  d. The full contents of the file
+  e. A blank line
+
+Usage Guidelines:
+-----------------
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+
+Notes:
+------
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+
+Additional Info:
+----------------
+
+================================================================
+Directory Structure
+================================================================
+.gitignore
+helpers/TeleTexter.py
+helpers/TeleViewer.py
+README.md
+requirements.txt
+TeleGatherer.py
+
+================================================================
+Files
+================================================================
+
+================
+File: .gitignore
+================
+.local/*
+poetry.lock
+pyproject.toml
+.replit
+.breakpoints
+replit.nix
+.git
+.pythonlibs/
+.upm
+__pycache__/*
+helpers/__pycache__/*
+.vscode/*
+*.session
+results.txt
+downloads/*
+*.json
+.env
+.DS_Store
+.bot-history
+.venv
+
+================
+File: helpers/TeleTexter.py
+================
+import requests
+import argparse
+import pprint
+import time
+
+
+def send_telegram_message(bot_token, chat_id, message):
+  """
+    Sends a message to a specified Telegram channel.
+    """
+  url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+  data = {"chat_id": chat_id, "text": message}
+  response = requests.post(url, data=data)
+  if response.json().get("ok") == True:
+    print(f"Message sent successfully! -> message_id: {response.json().get('result').get('message_id')}")
+  return response.json()
+
+
+def main(bot_token, chat_id, message, spam):
+  if spam:
+    while True:
+      response = send_telegram_message(bot_token, chat_id, message)
+      print("Message sent. Response:")
+      pprint.pprint(response)        
+      time.sleep(0.04)  # Delay to respect rate limits, adjust as needed
+  else:
+    response = send_telegram_message(bot_token, chat_id, message)
+    print("Message sent. Response:")
+    pprint.pprint(response)
+
+
+if __name__ == "__main__":
+  parser = argparse.ArgumentParser(
+      description="Send a message to a Telegram channel")
+  parser.add_argument("-t", "--bot_token", help="Telegram Bot Token")
+  parser.add_argument("-c", "--chat_id", help="Telegram Chat ID")
+  parser.add_argument("-m", "--message", help="Message to send")
+  parser.add_argument("--spam", help="Send messages continuously", action="store_true")
+
+  args = parser.parse_args()
+
+  main(args.bot_token, args.chat_id, args.message, args.spam)
+
+================
+File: helpers/TeleViewer.py
+================
+import pyrogram
+import json
+from dotenv import load_dotenv
+import os
+import random
+
+load_dotenv()
+
+api_id = os.getenv('API_ID')
+api_hash = os.getenv('API_HASH')
+
+
+def get_file_info(data):
+  media_type = ""
+  random_numbers = [random.randint(1, 100) for _ in range(6)]
+  if data.media is not None:
+    try:
+      for key in ['document', 'photo', 'video', 'location', 'voice', 'audio']:
+        if key in str(data):
+          media_type = key
+          break
+      if media_type == "document":
+        return (data.document.file_id, data.document.file_name)
+      elif media_type == "photo":
+        return (data.photo.file_id, f"{random_numbers}.png")
+      elif media_type == "video":
+        return (data.video.file_id, data.video.file_name)
+      elif media_type == "location":
+        return (data.location.file_id, data.location.file_name)
+      elif media_type == "voice":
+        return (data.voice.file_id, data.voice.file_name)
+      elif media_type == "audio":
+        return (data.audio.file_id, data.audio.file_name)
+      else:
+        return (None, None)
+    except Exception as e:
+      print(f"Error: {e}")
+      return (None, None)
+
+
+def parse_and_print_message(message):
+  print("=" * 20 + "\n")
+  message_dict = message.__dict__
+  for key, value in message_dict.items():
+    if value not in [None, False]:
+      print(f"{key}: {value}")
+  print("\n")
+  print("=" * 20 + "\n")
+
+
+def process_messages(bot_token, chat_id, num_messages, message_id):
+  directory = f'sessions/{chat_id}'
+  if not os.path.exists(directory):
+    os.makedirs(directory)
+  bot_token_filename = bot_token.replace(":", "_").replace("/", "_")
+  bot_token_filename = f"{directory}/{bot_token_filename}.session"
+  app = pyrogram.Client(bot_token_filename, api_id, api_hash)
+
+  async def main(num_messages, message_id):
+    try:
+      # Calculate the counter to get the correct number of messages. We do this so we can iterate through the messages in reverse order from the latest message.
+      counter = message_id - num_messages
+      while message_id >= counter:
+        message_id -= 1
+        async with app:
+          messages = await app.get_messages(chat_id, message_id)
+          if messages.date is None:
+            # Display the message_id not found every 10 messages
+            if message_id % 10 == 0:
+              print(f"[-] Message_id {message_id} not found")
+            counter -= 1
+            pass
+          else:
+            parse_and_print_message(messages)
+            if messages.media is not None:
+              file_id, file_name = get_file_info(messages)
+              if messages.from_user is not None:
+                file_name = f"downloads/{messages.from_user.username}/{message_id}_{file_name}"
+              else:
+                file_name = f"downloads/{chat_id}/{message_id}_{file_name}"
+              # download the file
+              # Keep track of the progress while downloading
+              async def progress(current, total):
+                if total != 0:
+                  print(f"{current * 100 / total:.1f}%")
+                else:
+                  print(
+                      f"[*] Download of {file_name.split('/')[-1]} is complete!"
+                  )
+
+              await app.download_media(
+                  file_id,
+                  file_name=file_name,
+                  progress=progress,
+              )
+            # save to file
+            if messages.from_user is not None:
+              username = messages.from_user.username
+              directory = f'Downloads/{username}/logs'
+              if not os.path.exists(directory):
+                os.makedirs(directory)
+              with open(f'{directory}/{username}_bot.txt', 'a') as file:
+                file.write(f"Message ID: {messages.id}\n")
+                file.write(
+                    f"From User ID: {messages.from_user.id} - Username: {messages.from_user.username}\n"
+                )
+                file.write(f"Date: {messages.date}\n")
+                file.write(f"Text: {messages.text}\n")
+                file.write(f"Reply_markup: {messages.reply_markup}\n\n")
+              # Save the whole message to a file
+              with open(f'{directory}/{username}_bot.json',
+                        'a') as file:
+                file.write(str(messages))
+            else:
+              directory = f'Downloads/{chat_id}/logs'
+              with open(f'{directory}/{chat_id}_bot.txt', 'a') as file:
+                file.write(f"Message ID: {messages.id}\n")
+                file.write(f"Date: {messages.date}\n")
+                file.write(f"Text: {messages.text}\n")
+                file.write(f"Reply_markup: {messages.reply_markup}\n\n")
+              # Save the whole message to a file
+              with open(f'{directory}/{chat_id}_bot.json', 'a') as file:
+                file.write(str(messages))
+    except AttributeError as e:
+      print(f"Error: {e}")
+      pass
+    except Exception as e:
+      print(f"Error: {e}")
+      pass
+
+  try:
+    app.run(main(num_messages, message_id))
+  except KeyboardInterrupt:
+    print("\nStopping...")
+    app.disconnect()
+    pass
+
+================
+File: README.md
+================
+# TeleTracker
+
+This repository contains Python scripts, `TeleTexter.py`, `TeleGatherer.py` and `TeleViewer.py`, designed to assist analysts in tracking and disrupting active malware campaigns that use Telegram for command and control (C2) communications.
+
+### TeleGatherer.py
+
+`TeleGatherer.py` is the main script for gathering intelligence on the activities of threat actors and the data they collect from compromised hosts. It has been updated with new features and improvements:
+
+- ✅ **View Channel Messages & Download Content**
+  - Save content in current working directory under new folder named 'downloads'.
+  - Supports the download of documents, photos, videos, etc.
+
+- ✅ **Send Documents via Telegram**
+  - Optionally send a message.
+  - Supports all Telegram file types.
+  - Auto-detects MIME type.
+
+- ✅ **Message Selection**
+  - Choose a specified number of messages or a specific message_id for download.
+  - Download is **ALWAYS** from newest to oldest message.
+
+- ✅ **Log Saving**
+  - Pretty text with basic info under <bot_name>.txt.
+  - Full JSON dumps of each message under <bot_name>.json.
+
+- ✅ **Bot Information Retrieval**
+  - Get info on bot and owner.
+  - Includes channel-related details.
+
+- ✅ **Newest Added Feature/Enhancement**
+  - Send files functionality.
+
+- ✅ **Optional Menu**
+  - **MONITOR:** Read new messages.
+  - **DISRUPT:** Delete messages from malicious channels.
+  - **DISRUPT:** Spam channels at a high rate with the message of your choice.
+
+> [!NOTE]
+> This script is intended for threat intelligence analysts or researchers who want to monitor, collect, and track adversaries using Telegram for C2 communication.
+
+## Installation
+
+To use these scripts, Python must be installed on your system, along with the `requests` library.
+
+1. Clone the repository:\
+```git clone https://github.com/tsale/TeleTracker.git```
+
+2. Install the required Python package:\
+`pip install -r requirements`
+
+## Usage
+
+### TeleTexter.py
+
+To send a message to a Telegram channel:
+
+`python TeleTexter.py -t YOUR_BOT_TOKEN -c YOUR_CHAT_ID -m "Your message here"`
+
+To send messages continuously:
+
+`python TeleTexter.py -t YOUR_BOT_TOKEN -c YOUR_CHAT_ID -m "Your message here" --spam`
+
+### Introducing Televiewer.py
+
+`Televiewer.py` is the latest tool, allowing you to view and download all messages and media from the threat actor-controlled telegram channel. You can use this feature by selecting the number 6 from the initial menu after running `TeleGathere.py`. With `Televiewer.py` features, you can:
+
+- View all channel messages and download all uploaded content, including documents, photos, videos, and other media. All downloaded content is saved in a `downloads` directory.
+- Specify the number of messages to download, from the newest to the oldest.
+- Save all text in two formats: clean, readable text with basic info saved in a Txt file and a comprehensive list of every message saved in a JSON file.
+
+To use `Televiewer.py`, create a [Telegram API](https://core.telegram.org/api/obtaining_api_id) and add your `API_hash` and `API_id` to the `.env` file. in the below format:
+
+```
+API_ID="XXX"
+API_HASH="XXX"
+```
+
+
+### TeleGatherer.py
+
+To gather intelligence from a Telegram channel:
+
+`python TeleGatherer.py -t YOUR_BOT_TOKEN -c YOUR_CHAT_ID`
+
+## Recent Updates
+
+- Ability to view and download all types of media from channels.
+- Option to select the number of messages for downloading.
+- Dual format text saving: pretty text and full JSON dumps.
+- Numerous improvements and bug fixes to enhance existing features.
+
+## Disclaimer
+
+Use these tools responsibly. They are intended for analysis and research purposes only. Ensure compliance with all applicable laws and Telegram's terms of service.
+
+================
+File: requirements.txt
+================
+Pyrogram==2.0.106
+python-dotenv==1.0.0
+requests==2.31.0
+tgcrypto
+
+================
+File: TeleGatherer.py
+================
+import requests
+import time
+import pprint
+import argparse
+import multiprocessing
+import mimetypes
+from helpers.TeleTexter import send_telegram_message
+from helpers.TeleViewer import process_messages
+
+
+def parse_dict(title, dictionary):
+  result = f"{title}:\n"
+  for key, value in dictionary.items():
+    if isinstance(value, dict):
+      result += '\n'.join(f"- {k}: {v}" for k, v in value.items())
+    else:
+      result += f"- {key}: {value}\n"
+  return result + "\n"
+
+def delete_messages(bot_token, chat_id, message_id):
+  try:
+    response = deleteMessage(bot_token, chat_id, message_id)
+    if response.get("ok") == True:
+      print(f"Deleted message {message_id}")
+      message_id -= 1
+    elif response.get("ok") == False and response.get("description") == "Bad Request: message can't be deleted for everyone":
+      print(f"Message {message_id} is an old message. You can only delete messages that are within 24 hours.")
+    elif response.get("ok") == False:
+      print(f"Message {message_id} not found.")
+  except Exception as e:
+    print(f"Error: {message_id}")
+
+def deleteMessage(bot_token, chat_id, message_id):
+  url = f"https://api.telegram.org/bot{bot_token}/deleteMessage"
+  data = {"chat_id": chat_id, "message_id": message_id}
+  response = requests.post(url, data=data)
+  return response.json()
+
+def send_file_to_telegram_channel(bot_token, chat_id, file_path):
+  try:
+    mime_type = mimetypes.guess_type(file_path)[0]
+    file_type = 'document'  # default to document
+
+    if mime_type:
+      if 'audio' in mime_type:
+        file_type = 'audio'
+      elif 'video' in mime_type:
+        file_type = 'video'
+      elif 'image' in mime_type:
+        file_type = 'photo'
+
+    file_type_methods = {
+      'document': 'sendDocument',
+      'photo': 'sendPhoto',
+      'audio': 'sendAudio',
+      'video': 'sendVideo',
+      'animation': 'sendAnimation',
+      'voice': 'sendVoice',
+      'video_note': 'sendVideoNote'
+    }
+
+    url = f"https://api.telegram.org/bot{bot_token}/{file_type_methods[file_type]}"
+    with open(file_path, 'rb') as file:
+      files = {
+        file_type: file
+      }
+      message = input("Enter the message to send with the file (press enter to skip): ")
+      data = {
+        'chat_id': chat_id,
+        'caption': message
+      }
+      response = requests.post(url, files=files, data=data)
+      return response.json()
+  except Exception as e:
+    print(f"An error occurred while trying to send the file: {e}")
+
+def get_my_commands(chat_id, bot_token):
+  url = f"https://api.telegram.org/bot{bot_token}/getMyCommands"
+  data = {"chat_id": chat_id}
+  response = requests.get(url, data=data)
+  return response.json()
+
+
+def get_updates(bot_token, offset=None, timeout=30):
+  url = f"https://api.telegram.org/bot{bot_token}/getUpdates?timeout={timeout}"
+  if offset:
+    url += f"&offset={offset}"
+  response = requests.get(url)
+  return response.json()
+
+
+def get_bot_info(bot_token):
+  url = f"https://api.telegram.org/bot{bot_token}/getMe"
+  response = requests.get(url)
+  return response.json()
+
+
+def get_My_Default_AdministratorRights(bot_token, chat_id):
+  url = f"https://api.telegram.org/bot{bot_token}/getMyDefaultAdministratorRights"
+  data = {"chat_id": chat_id}
+  response = requests.get(url, data=data)
+  return response.json()
+
+
+def get_chat_info(bot_token, chat_id):
+  url = f"https://api.telegram.org/bot{bot_token}/getChat"
+  data = {"chat_id": chat_id}
+  response = requests.post(url, data=data)
+  return response.json()
+
+
+def get_chat_administrators(bot_token, chat_id):
+  url = f"https://api.telegram.org/bot{bot_token}/getChatAdministrators"
+  data = {"chat_id": chat_id}
+  response = requests.post(url, data=data)
+  return response.json()
+
+
+def get_chat_member_count(bot_token, chat_id):
+  url = f"https://api.telegram.org/bot{bot_token}/getChatMembersCount"
+  data = {"chat_id": chat_id}
+  response = requests.post(url, data=data)
+  return response.json()
+
+
+def get_latest_messageid(bot_token, chat_id):
+  response = send_telegram_message(bot_token, chat_id, ".")
+  if response.get("ok") == True:
+    message_id = response.get('result').get('message_id')
+    deleteMessage(bot_token, chat_id, message_id)
+    return message_id
+  else:
+    print("Error: Unable to retrieve latest message id: ",
+          response.get("description"))
+    return None
+
+
+def main(bot_token, chat_id):
+  # Retrieve information and print in a pretty format
+  can_read = get_bot_info(bot_token).get('result',
+                                         {}).get('can_read_all_group_messages',
+                                                 False)
+  if not args.silent:
+    print(parse_dict("Bot Information", get_bot_info(bot_token)))
+    print(parse_dict("Chat Information", get_chat_info(bot_token, chat_id)))
+    print(
+        parse_dict("Chat Administrators",
+                  get_chat_administrators(bot_token, chat_id)))
+    print(
+        parse_dict("My Default Administrator Rights",
+                  get_My_Default_AdministratorRights(bot_token, chat_id)))
+    print(
+        parse_dict("Available Bot Commands", get_my_commands(chat_id,
+                                                            bot_token)))
+    print(
+        parse_dict("Chat Member Count",
+                  get_chat_member_count(bot_token, chat_id)))
+  if args.info:
+    exit()
+  while True:
+    print("\nOptions:")
+    print("1. Monitor for new messages from a different bot")
+    print("2. Send a message to the malicious telegram channel")
+    print("3. Spam the malicious telegram channel with a specific message")
+    print("4. Delete all messages from the malicious telegram channel that are sent within 24 hours\n")
+    print("5. Get approximate number of messages on the malicious telegram channel")
+    print("6. Download ALL messages from the malicious telegram channel")
+    print("7. Send a file to the malicious telegram channel\n")
+    print("8. EXIT")
+    choice = input("\nEnter your choice: ")
+    if choice == '1':
+      offset = None  # Variable to keep track of the last update ID
+      if can_read:
+        print(
+            "\t [*] Administrator persmission granted. Monitoring for new messages...."
+        )
+        while True:
+          try:
+            updates = get_updates(bot_token, offset)
+            for update in updates.get("result", []):
+              print("Received Update:")
+              pprint.pprint(update, indent=4, width=50)
+
+              # Update the offset to only receive new updates
+              offset = update["update_id"] + 1
+          except KeyboardInterrupt:
+            print("Monitoring interrupted. Going back to options.")
+            break
+          time.sleep(1)
+      else:
+        print("Bot does not have permission to read messages.")
+
+    elif choice == '2':
+      message = input("Enter the message you want to send: ")
+      response = send_telegram_message(bot_token, chat_id, message)
+      if response.get("ok") == True:
+        print("Message sent. Response:")
+        pprint.pprint(response)
+
+    elif choice == '3':
+      message = input("Enter the message you want to spam: ")
+      processes = []
+      for _ in range(1000000000):  # Adjust the number of processes as needed
+        p = multiprocessing.Process(target=send_telegram_message,
+                                    args=(bot_token, chat_id, message))
+        p.start()
+        processes.append(p)
+
+      for p in processes:
+        p.join()
+
+    elif choice == '4':
+      message_id = get_latest_messageid(bot_token, chat_id)
+      processes = []
+      for _ in range(1000000000):  # Adjust the number of processes as needed
+        p = multiprocessing.Process(target=delete_messages,
+                                    args=(bot_token, chat_id, message_id))
+        p.start()
+        processes.append(p)
+        message_id -= 1
+
+      for p in processes:
+        p.join()
+
+    elif choice == '5':
+      message_id = get_latest_messageid(bot_token, chat_id)
+      if message_id is not None:
+        print(
+            f"Approximate number of messages on the malicious channel: {message_id}"
+        )
+      else:
+        print(message_id)
+
+    elif choice == '6':
+      try:
+        message_id = get_latest_messageid(bot_token, chat_id)
+        print(f"\t\n TOTAL NUMBER OF MESSAGES: ~{message_id}\n")
+        num_messages = input(
+            "Press ENTER to retreive all messages or enter a number (Downloading from Newest to Oldest): "
+        )
+        if num_messages == "":
+          num_messages = message_id
+        else:
+          num_messages = int(num_messages)
+        question = input(
+            "Would you like to start from a specific message_id? (y/n): ")
+        if question.lower() == 'y':
+          message_id = int(
+              input(f"Enter the message_id offset to start from: "))
+        if message_id is not None:
+          process_messages(bot_token, chat_id, num_messages, message_id)
+        else:
+          print(message_id)
+      except Exception as e:
+        print(f"Error: {e}")
+    elif choice == '7':
+      file_path = input("Enter the absolute file path: ")
+      response = send_file_to_telegram_channel(bot_token, chat_id, file_path)
+      if response.get("ok") == True:
+        print("File sent. Response:")
+        pprint.pprint(response)
+      else:
+        print("Error: Unable to send file: ", response.get("description"))
+    elif choice == '8':
+      print("Exiting...")
+      break
+    else:
+      print("Invalid choice. Please try again.")
+
+# Check a file for the bot token and chat id pair it is stored in the file in the form of bot_token:chat_id, then print a message asking if you are sure you want to continue. Otherwise continue and add the bot token and chat id to the file in the form of bot_token:chat_id and continue.
+def check_file_for_token_and_chat_id(file_path, bot_token, chat_id):
+  with open(file_path, 'r') as file:
+    for line in file:
+      if line.strip() == f"{bot_token}:{chat_id}":
+        return True
+  return False
+
+def add_token_and_chat_id_to_file(file_path, bot_token, chat_id):
+  with open(file_path, 'a') as file:
+    file.write(f"{bot_token}:{chat_id}\n")
+
+if __name__ == "__main__":
+  parser = argparse.ArgumentParser(description="Telegram Bot Script")
+  parser.add_argument("-t", "--bot_token", help="Telegram Bot Token")
+  parser.add_argument("-i", "--info", help="Get Bot Information and exit", action="store_true")
+  parser.add_argument("-c", "--chat_id", help="Telegram Chat ID", type=int)
+  parser.add_argument("-s", "--silent", help="Silent mode, no prompts, just show the information and exit", action="store_true")
+  args = parser.parse_args()
+
+  file_path = ".bot-history"  # Replace with the actual file path
+
+  if check_file_for_token_and_chat_id(file_path, args.bot_token, args.chat_id):
+    print("Bot token and chat ID pair already exists in the file.")
+    response = input("Are you sure you want to continue? (y/n): ")
+    if response.lower() != "y":
+      exit()
+  else:
+    add_token_and_chat_id_to_file(file_path, args.bot_token, args.chat_id)
+
+  main(args.bot_token, args.chat_id)
+
+
+
+================================================================
+End of Codebase
+================================================================
